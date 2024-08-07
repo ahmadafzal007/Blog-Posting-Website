@@ -36,4 +36,4 @@ This project is developed using the MERN stack:
 
 1. Clone the repository:
    ```sh
-   git clone git@github.com:ahmadafzal007/detailed-exploratory-data-analysis-in-R.git
+   git clone git@github.com:ahmadafzal007/Blog-Posting-Website.git
