@@ -23,4 +23,6 @@ app.use(errorHandler);
 
 dbconnect();
 
+app.use('/storage', express.static('storage'));
+
 app.listen(PORT, () => console.log(`Your Backend is running on PORT: ${PORT}`));

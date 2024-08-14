@@ -1,19 +1,13 @@
-const Joi = require('joi');
-const User =  require('../models/users')
-const bcrypt = require('bcrypt'); 
-const { json } = require('express');
-const userDTO = require('../dto/user.js');
-const jwtService = require('../services/JWTservices.js');
-const RefreshToken = require('../models/token.js');
+const Joi = require("joi");
+const User = require("../models/users");
+const bcrypt = require("bcrypt");
+const userDTO = require("../dto/user.js");
+const jwtService = require("../services/JWTservices.js");
+const RefreshToken = require("../models/token.js");
 
 const passwordPattern = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[a-zA-Z\d]{8,25}$/;
 
-
-
-
-
 const authController = {
-
   async register(req, res, next) {
     // 1. validate user input
     const userRegisterSchema = Joi.object({
@@ -62,76 +56,55 @@ const authController = {
     // 4. password hash
     const hashedPassword = await bcrypt.hash(password, 10);
 
-  // 5. Store user data in db 
+    // 5. Store user data in db
 
-  let accessToken;
-  let refreshToken;
-  let user;
+    let accessToken;
+    let refreshToken;
+    let user;
 
-  try{
-    const userToRegister = new User({
-      username,
-      name,
-      email,
-      password: hashedPassword
-    })
-   
-  
-   user = await userToRegister.save();
+    try {
+      const userToRegister = new User({
+        username,
+        name,
+        email,
+        password: hashedPassword,
+      });
 
-   //Token Generation
+      user = await userToRegister.save();
 
-   //generating access token
+      //Token Generation
 
-   accessToken = jwtService.signAccessToken({_id: user._id}, "30m")
+      //generating access token
 
-   //generating refresh token
+      accessToken = jwtService.signAccessToken({ _id: user._id }, "30m");
 
-   refreshToken = jwtService.signRefreshToken({_id:user._id}, "60m")
+      //generating refresh token
 
-  }catch (error) {
-    return next(error)
-  }
+      refreshToken = jwtService.signRefreshToken({ _id: user._id }, "60m");
+    } catch (error) {
+      return next(error);
+    }
 
+    // store refresh token in db
+    await jwtService.storeRefreshTOken(refreshToken, user._id);
 
-  // store refresh token in db
- await jwtService.storeRefreshTOken(refreshToken, user._id);
+    // sending token in cookies
+    res.cookie("accessToken", accessToken, {
+      maxAge: 1000 * 60 * 60 * 24,
+      httpOnly: true,
+    });
 
- 
-  // sending token in cookies
-  res.cookie("accessToken", accessToken, {
-    maxAge: 1000 * 60 * 60 * 24,
-    httpOnly: true
-  })
+    res.cookie("refreshToken", refreshToken, {
+      maxAge: 1000 * 60 * 60 * 24,
+      httpOnly: true,
+    });
 
+    // 6. Send Response
+    const userDto = new userDTO(user);
+    return res.status(201).json({ user: userDto, auth: true });
+  },
 
-
-  res.cookie("refreshToken", refreshToken, {
-    maxAge: 1000 * 60 * 60 * 24,
-    httpOnly: true
-  })
-
-
-
-
-
-  // 6. Send Response
-  const userDto = new userDTO(user);
-  return res.status(201).json({user: userDto, auth: true});
-
-
-   },
-
-
-
-
-
-
-
-
-
-   async login(req,res,next) {
-
+  async login(req, res, next) {
     // validate user input
 
     // check for errors and return errors
@@ -140,127 +113,177 @@ const authController = {
 
     // return response
 
-
     const userLoginSchema = Joi.object({
       username: Joi.string().min(5).max(30).required(),
-      password:  Joi.string().pattern(passwordPattern).required(),
-
+      password: Joi.string().pattern(passwordPattern).required(),
     });
 
-    const {error}  = userLoginSchema.validate(req.body);
+    const { error } = userLoginSchema.validate(req.body);
 
-    if(error) {
+    if (error) {
       next(error);
     }
 
-
-    const {username, password} = req.body;
+    const { username, password } = req.body;
     let user;
 
-    try{
-      user = await User.findOne({username: username});
+    try {
+      user = await User.findOne({ username: username });
 
-
-      if(!user){
+      if (!user) {
         const error = {
           status: 401,
           message: "Invalid Username",
-        }
+        };
         return next(error);
       }
-
 
       // match password
 
-      const match = await bcrypt.compare(password, user.password)
+      const match = await bcrypt.compare(password, user.password);
 
-      if(!match){
-
+      if (!match) {
         const error = {
           status: 401,
-          message: "Invalid password!"
-        }
+          message: "Invalid password!",
+        };
 
         return next(error);
       }
-    }catch(err){
-       return next(err);
+    } catch (err) {
+      return next(err);
     }
-    
-    const accessToken = jwtService.signAccessToken({_id:user._id}, "30m");
-    const refreshToken = jwtService.signRefreshToken({_id:user._id}, "60m");
 
+    const accessToken = jwtService.signAccessToken({ _id: user._id }, "30m");
+    const refreshToken = jwtService.signRefreshToken({ _id: user._id }, "60m");
 
     //update the token if needed
 
-    try{
-      await RefreshToken.updateOne({
-        _id: user._id,
-      }, 
-    {token: refreshToken},
-    {upsert: true}
-    )
-
-    }catch(error){
+    try {
+      await RefreshToken.updateOne(
+        {
+          _id: user._id,
+        },
+        { token: refreshToken },
+        { upsert: true }
+      );
+    } catch (error) {
       return next(error);
     }
 
-    
-
-    
     res.cookie("accessToken", accessToken, {
       maxAge: 24 * 60 * 60 * 24,
-      httpOnly: true
-    })
+      httpOnly: true,
+    });
 
-    
     res.cookie("refreshToken", refreshToken, {
       maxAge: 1000 * 60 * 60 * 24,
-      httpOnly: true
-    })
-
-
-
+      httpOnly: true,
+    });
 
     const userDto = new userDTO(user);
-    
-    return res.status(200).json({user:userDto, auth:true});
 
-   },
-  
+    return res.status(200).json({ user: userDto, auth: true });
+  },
 
-
-
-   async logout(req, res, next){
+  async logout(req, res, next) {
     console.log(req);
 
     // deleting the refresh token
-    const {refreshToken} = req.cookies;
+    const { refreshToken } = req.cookies;
 
-    try{
-      await RefreshToken.deleteOne({token: refreshToken});
-
-
-    }catch(error){
-      return next(error)
+    try {
+      await RefreshToken.deleteOne({ token: refreshToken });
+    } catch (error) {
+      return next(error);
     }
-      
 
-    res.clearCookie("accessToken")
-    res.clearCookie("refreshToken")
+    res.clearCookie("accessToken");
+    res.clearCookie("refreshToken");
 
     // sending response
-    res.status(200).json({user: null, auth:false});
+    res.status(200).json({ user: null, auth: false });
+  },
 
-   },
 
-   async refresh (req, res, next){
+
+
+
+  async refresh(req, res, next) {
     // getting the refresh token
     // verify the refresh token
-    // generate the new refresh token
+    // generate the new token
     // update db, return response
 
-   }
-}
+    //getting the refresh token
+    const orignalRefreshToken = req.cookies.refreshToken;
+
+    // Verifying the refresh token
+    let id;
+
+    try {
+      id = await jwtService.verifyRefreshToken(orignalRefreshToken)._id;
+    } catch (err) {
+      const error = {
+        status: 401,
+        message: "Unauthorized",
+      };
+
+      return next(error);
+    }
+
+    try {
+      const match = RefreshToken.findOne({
+        _id: id,
+        token: orignalRefreshToken,
+      });
+
+      if (!match) {
+        const error = {
+          status: 401,
+          message: "Unauthorized",
+        };
+        return next(error);
+      }
+    } catch (err) {
+      return next(err);
+    }
+
+    // generating a new token
+
+    try {
+      const accessToken = jwtService.signAccessToken({ _id: id }, "30m");
+
+      const refreshToken = jwtService.signRefreshToken({_id: id }, "60m");
+
+      // update db
+      await RefreshToken.updateOne({_id: id }, {token: refreshToken });
+
+      res.cookie("accessToken", accessToken, {
+        maxAge: 1000 * 60 * 60 * 24,
+        httpOnly: true,
+      });
+
+      res.cookie("refreshToken", refreshToken, {
+        maxAge: 1000 * 60 * 60 * 24,
+        httpOnly: true,
+      });
+    } catch (err) {
+      return next(err);
+    }
+
+    // sending response
+
+    try {
+      const user = await User.findOne({ _id: id });
+
+      const userDto = new userDTO(user);
+
+      return res.status(200).json({ user: userDto, auth: true });
+    } catch (err) {
+      return next(err);
+    }
+  },
+};
 
 module.exports = authController;
